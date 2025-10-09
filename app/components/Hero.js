@@ -13,7 +13,7 @@ const Hero = () => {
       </p>
       <div className="mt-8 flex gap-4">
         <Link
-          href="/get-quote"
+          href="#contact"
           className="bg-white text-blue-700 px-6 py-3 rounded-full font-semibold hover:bg-gray-200 transition"
         >
           Get a Free Quote

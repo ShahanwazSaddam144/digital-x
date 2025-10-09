@@ -38,7 +38,7 @@ const Navbar = () => {
           <Link href="#portfolio" className="hover:text-blue-600 transition">
             Portfolio
           </Link>
-          <Link href="/contact" className="hover:text-blue-600 transition">
+          <Link href="#contact" className="hover:text-blue-600 transition">
             Contact
           </Link>
         </div>
@@ -46,7 +46,7 @@ const Navbar = () => {
         {/* CTA Button */}
         <div className="hidden md:block">
           <Link
-            href="/get-quote"
+            href="#contact"
             className="bg-blue-600 text-white px-5 py-2 rounded-full font-semibold hover:bg-blue-700 transition"
           >
             Get a Quote
@@ -94,14 +94,14 @@ const Navbar = () => {
             Portfolio
           </Link>
           <Link
-            href="/contact"
+            href="#contact"
             className="block text-gray-700 dark:text-gray-200 hover:text-blue-600"
             onClick={() => setMenuOpen(false)}
           >
             Contact
           </Link>
           <Link
-            href="/get-quote"
+            href="#contact"
             className="block text-center bg-blue-600 text-white px-4 py-2 rounded-full font-semibold hover:bg-blue-700 transition"
             onClick={() => setMenuOpen(false)}
           >
