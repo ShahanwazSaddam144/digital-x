@@ -2,10 +2,11 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Menu, X } from "lucide-react"; 
+import { Menu, X } from "lucide-react";
 
-const Navbar = () => {
+const Navbar = ({ handleClick }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+
 
   return (
     <header className="fixed top-0 left-0 w-full bg-gray-900 shadow-md z-50">
@@ -13,8 +14,8 @@ const Navbar = () => {
         {/* Logo */}
         <div className="flex items-center gap-2">
           <Image
-           width={300}
-           height={300}
+            width={300}
+            height={300}
             src="/butt.png"
             alt="Digital-X Logo"
             className="w-8 h-8 rounded-full"
@@ -45,12 +46,12 @@ const Navbar = () => {
 
         {/* CTA Button */}
         <div className="hidden md:block">
-          <Link
-            href="#contact"
+          <button
+            onClick={handleClick}
             className="bg-blue-600 text-white px-5 py-2 rounded-full font-semibold hover:bg-blue-700 transition"
           >
             Get a Quote
-          </Link>
+          </button>
         </div>
 
         {/* Mobile Menu Button */}

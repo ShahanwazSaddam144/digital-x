@@ -15,7 +15,7 @@ html{
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(100, 100, 100, 0.4); /* slim + subtle */
+  background-color: rgba(16, 16, 16, 0.4); /* slim + subtle */
   border-radius: 10px;
   transition: background 0.3s ease;
 }
@@ -27,5 +27,5 @@ html{
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(100, 100, 100, 0.4) transparent;
+  scrollbar-color: rgba(16, 16, 16, 0.4) transparent;
 }
