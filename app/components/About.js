@@ -25,8 +25,8 @@ const team = [
     Profile: "https://wahb.space/",
   },
     {
-    Icon: "/developer3.png",
-    Name: "Sheikh Yusha",
+    Icon: "/developer.jpg",
+    Name: "Robert Ali",
     Role: "Our Digital-Marketing Expert",
     GitHub: "https://github.com/coder101-js?tab=repositories",
     Profile: "https://wahb.space/",

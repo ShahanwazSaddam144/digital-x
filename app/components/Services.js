@@ -18,7 +18,7 @@ import {
 const services = [
   {
     Name: "Digital-Marketing",
-    Expert: "Sheikh Yusha",
+    Expert: "Robert Ali",
     Desc: "We help your brand grow through targeted campaigns, SEO optimization, and social media marketing strategies.",
   },
   {
@@ -43,7 +43,7 @@ const services = [
   },
   {
     Name: "Graphic Designing",
-    Expert: "Sheikh Yusha",
+    Expert: "Robert Ali",
     Desc: "We design engaging visuals, branding materials, and marketing assets that make your business visually compelling.",
   },
   {
