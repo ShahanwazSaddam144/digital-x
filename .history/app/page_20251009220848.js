@@ -6,21 +6,20 @@ import Portfolio from "./components/Portfolio";
 import Blogs from "./components/Blogs";
 import Price from "./components/Price";
 import Contact from "./components/Contact";
-import Quotes from "./components/Get-quote";
+import Qu
 import Footer from './components/Footer';
 
 export default function Home() {
   return (
     <>
     <Navbar />
-    <Quotes />
     <Hero />
     <About />
     <Services />
     <Portfolio />
     <Blogs />
     <Price />
-    {/* <Contact /> */}
+    <Contact />
     <Footer />
     </>
   );

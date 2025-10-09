@@ -20,8 +20,8 @@ export default function Home() {
     <Portfolio />
     <Blogs />
     <Price />
-    {/* <Contact /> */}
+    <Contact />
     <Footer />
-    </>
+    </>J
   );
 }
