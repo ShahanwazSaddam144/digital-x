@@ -114,8 +114,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
 
         toastIdRef.current = null;
         uploadStartRef.current = null;
-        setTimeout(() => toast.dismiss(id), 5000);
-    }
+        setTimeout(() =>  toast.dismiss(id), 5000);
 }
 
 async function handleSubmit(e) {
@@ -341,4 +340,4 @@ return (
         </AnimatePresence>
     </>
 );
-
+}
