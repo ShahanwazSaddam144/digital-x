@@ -6,7 +6,7 @@ import Portfolio from "./components/Portfolio";
 import Blogs from "./components/Blogs";
 import Price from "./components/Price";
 import Contact from "./components/Contact";
-import Quotes from "./components/Get-quote";
+import Quotes from "./components/Quotes";
 import Footer from './components/Footer';
 
 export default function Home() {
@@ -20,7 +20,7 @@ export default function Home() {
     <Portfolio />
     <Blogs />
     <Price />
-    {/* <Contact /> */}
+    <Contact />
     <Footer />
     </>
   );
