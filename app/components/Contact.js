@@ -7,7 +7,6 @@ const Contact = () => {
     Name: '',
     Email: '',
     Phone: '',
-    Project: '',
     Message: '',
   });
 
@@ -75,16 +74,6 @@ const Contact = () => {
             value={formData.Phone}
             required
             className="w-full border-b-2 border-gray-300 focus:border-blue-500 px-2 py-2 outline-none transition duration-200"
-          />
-
-            <textarea
-            name="Project"
-            placeholder="Your Project (e.g web,app or etc, etc.)"
-            onChange={handleChange}
-            value={formData.Project}
-            required
-            rows="1"
-            className="w-full border-b-2 border-gray-300 focus:border-blue-500 px-2 py-2 outline-none transition duration-200 resize-none"
           />
 
           <textarea

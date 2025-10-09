@@ -4,14 +4,14 @@ const Contact = require("../Database/contact");
 const router = express.Router();
 
 router.post('/contact', async (req, res) => {
-  const { Name, Email, Phone, Project, Message } = req.body;
+  const { Name, Email, Phone, Message } = req.body;
 
-  if (!Name || !Email || !Phone || !Project || !Message) {
+  if (!Name || !Email || !Phone || !Message) {
     return res.status(400).json({ message: 'All fields are required.' });
   }
 
   try {
-    const newContact = new Contact({ Name, Email, Phone, Project, Message });
+    const newContact = new Contact({ Name, Email, Phone, Message });
     await newContact.save();
 
     res.status(200).json({ message: '✅ Thank you for contacting us!' });
