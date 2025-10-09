@@ -1,22 +1,29 @@
-// app/api/quote/route.js
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { connectToDatabase } from "../../lib/mongodb";
+import axios from "axios";
+
+function escapeHtml(str = "") {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function nl2br(str = "") {
+    return str.replace(/\n/g, "<br>");
+}
 
 export async function POST(req) {
     try {
-
         const contentType = req.headers.get("content-type") || "";
-
         let payload = {};
         let fileAttachment = null;
 
-        if (contentType.includes("application/json")) {
-            payload = await req.json();
-        } else if (contentType.includes("multipart/form-data")) {
+        // --- Parse request ---
+        if (contentType.includes("multipart/form-data")) {
             const formData = await req.formData();
-
-            // expected fields: name, email, company, service, budget, message
             payload = {
                 name: formData.get("name") ?? "",
                 email: formData.get("email") ?? "",
@@ -24,9 +31,9 @@ export async function POST(req) {
                 service: formData.get("service") ?? "",
                 budget: formData.get("budget") ?? "",
                 message: formData.get("message") ?? "",
+                hcaptchaToken: formData.get("hcaptchaToken") ?? "",
             };
 
-            // file handling: 'file' is optional
             const file = formData.get("file");
             if (file && typeof file === "object" && "arrayBuffer" in file) {
                 const arrayBuffer = await file.arrayBuffer();
@@ -37,26 +44,41 @@ export async function POST(req) {
                     contentType: file.type || "application/octet-stream",
                 };
             }
+        } else if (contentType.includes("application/json")) {
+            payload = await req.json();
         } else {
-            // fallback
-            try {
-                payload = await req.json();
-            } catch {
-                return NextResponse.json({ ok: false, message: "Unsupported content-type" }, { status: 400 });
-            }
+            return NextResponse.json({ ok: false, message: "Unsupported content-type" }, { status: 400 });
         }
 
-        // validate basic fields (adjust as needed)
+        // --- Verify fields ---
         if (!payload.name || !payload.email || !payload.message) {
-            return NextResponse.json({ ok: false, message: "name, email and message are required" }, { status: 400 });
+            return NextResponse.json({ ok: false, message: "Name, email and message are required" }, { status: 400 });
         }
 
-        // Save to MongoDB (without file binary)
+        // --- Verify hCaptcha ---
+        if (!payload.hcaptchaToken) {
+            return NextResponse.json({ ok: false, message: "Missing hCaptcha token" }, { status: 400 });
+        }
+
+        const hcaptchaRes = await axios.post(
+            "https://hcaptcha.com/siteverify",
+            new URLSearchParams({
+                secret: process.env.HCAPTCHA_SECRET,
+                response: payload.hcaptchaToken,
+            })
+        );
+
+        if (!hcaptchaRes.data.success) {
+            return NextResponse.json({ ok: false, message: "hCaptcha verification failed" }, { status: 403 });
+        }
+
+        // --- Save to MongoDB ---
         const { db } = await connectToDatabase();
         const quotes = db.collection("quotes");
 
         const record = {
             ...payload,
+            hcaptchaToken: undefined, // don’t store token
             fileMeta: fileAttachment
                 ? { filename: fileAttachment.filename, contentType: fileAttachment.contentType, size: fileAttachment.content?.length ?? null }
                 : null,
@@ -65,8 +87,7 @@ export async function POST(req) {
 
         const insertResult = await quotes.insertOne(record);
 
-        // Send email via Nodemailer (Gmail)
-        // Make sure you set EMAIL_USER and EMAIL_PASS in env (app password)
+        // --- Send Email ---
         const transporter = nodemailer.createTransport({
             service: "gmail",
             auth: {
@@ -75,11 +96,6 @@ export async function POST(req) {
             },
         });
 
-        const mailTo = process.env.EMAIL_TO || process.env.EMAIL_USER;
-        const subject = `New Quote Request from ${payload.name}`;
-
-        // build HTML body
-        // prettier-ignore
         const html = `
 <!doctype html>
 <html>
@@ -183,54 +199,18 @@ export async function POST(req) {
 </html>
 `;
 
-        // Plain-text fallback (keep it simple & readable)
-        const text = [
-            `New Quote Request from ${payload.name}`,
-            `Email: ${payload.email}`,
-            `Company: ${payload.company || '—'}`,
-            `Service: ${payload.service}`,
-            `Budget: ${payload.budget}`,
-            '',
-            'Message:',
-            payload.message,
-            '',
-            `Saved to DB: ${insertResult.insertedId}`,
-        ].join('\n\n');
-
-
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: mailTo,
-            subject,
+        await transporter.sendMail({
+            from: `"Quote Form" <${process.env.EMAIL_USER}>`,
+            to: process.env.EMAIL_TO,
+            subject: `New Quote Request from ${payload.name}`,
             html,
-            attachments: fileAttachment ? [
-                {
-                    filename: fileAttachment.filename,
-                    content: fileAttachment.content,
-                    contentType: fileAttachment.contentType,
-                },
-            ] : [],
-        };
+            attachments: fileAttachment ? [fileAttachment] : [],
+        });
 
-        await transporter.sendMail(mailOptions);
+        return NextResponse.json({ ok: true, message: "Quote received and email sent!" }, { status: 200 });
 
-        return NextResponse.json({ ok: true, message: "Quote saved and email sent", id: insertResult.insertedId }, { status: 200 });
     } catch (err) {
-        console.error("Quote API error:", err);
-        return NextResponse.json({ ok: false, message: "Server error" }, { status: 500 });
+        console.error("Error handling quote:", err);
+        return NextResponse.json({ ok: false, message: "Server error. Try again later." }, { status: 500 });
     }
-}
-
-// tiny helpers
-function escapeHtml(unsafe) {
-    if (!unsafe) return "";
-    return String(unsafe)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-}
-function nl2br(str) {
-    return (str || "").replace(/\n/g, "<br/>");
 }
