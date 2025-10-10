@@ -574,18 +574,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                 ) : (
                                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                                        {/* ... form fields unchanged (kept from your original code) ... */}
-                                        <div className="col-span-2 md:col-span-1">
-                                            <label className="text-sm font-medium">Full name</label>
-                                            <input
-                                                ref={firstInputRef}
-                                                value={form.name}
-                                                onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
-                                                className={`mt-1 w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 ${errors.name ? 'border-red-400 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
-                                                placeholder="Your name"
-                                            />
-                                            {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
-                                        </div>
+                                       
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Full name</label>
                                             <input
@@ -667,9 +656,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             <input type="file" onChange={handleFileChange} className="mt-1 w-full text-sm text-gray-600" />
                                             <p className="text-xs text-gray-400 mt-1">Max {Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB</p>
                                         </div>
-                                        {/* ... rest of inputs omitted from this snippet for brevity (keep your original JSX) ... */}
-
-                                        {/* IMPORTANT: render the HCaptcha component but only on client and with a remount key */}
+                                     
                                         <div className="col-span-2">
                                             {!SITEKEY ? (
                                                 <p className="text-sm text-red-500">Captcha not configured (NEXT_PUBLIC_HCAPTCHA_SITEKEY missing).</p>
