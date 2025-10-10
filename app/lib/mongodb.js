@@ -8,7 +8,7 @@ if (!uri) {
   throw new Error("Please define the MONGODB_URI environment variable");
 }
 
-let cached = globalThis._mongo; // eslint-disable-line no-undef
+let cached = globalThis._mongo; 
 
 if (!cached) {
   cached = globalThis._mongo = { conn: null, client: null };
