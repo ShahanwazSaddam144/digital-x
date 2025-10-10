@@ -586,7 +586,87 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             />
                                             {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
                                         </div>
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="text-sm font-medium">Full name</label>
+                                            <input
+                                                ref={firstInputRef}
+                                                value={form.name}
+                                                onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+                                                className={`mt-1 w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 ${errors.name ? 'border-red-400 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+                                                placeholder="Your name"
+                                            />
+                                            {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+                                        </div>
 
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="text-sm font-medium">Email</label>
+                                            <input
+                                                type="email"
+                                                value={form.email}
+                                                onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+                                                className={`mt-1 w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 ${errors.email ? 'border-red-400 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+                                                placeholder="you@example.com"
+                                            />
+                                            {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                                        </div>
+
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="text-sm font-medium">Company</label>
+                                            <input
+                                                value={form.company}
+                                                onChange={(e) => setForm((s) => ({ ...s, company: e.target.value }))}
+                                                className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                                placeholder="Your company (optional)"
+                                            />
+                                        </div>
+
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="text-sm font-medium">Service</label>
+                                            <select
+                                                value={form.service}
+                                                onChange={(e) => setForm((s) => ({ ...s, service: e.target.value }))}
+                                                className={`mt-1 w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 ${errors.service ? 'border-red-400 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+                                            >
+                                                <option>Web Design</option>
+                                                <option>Branding</option>
+                                                <option>SEO Optimization</option>
+                                                <option>Social Media Marketing</option>
+                                                <option>Paid Advertising</option>
+                                                <option>Other</option>
+                                            </select>
+                                            {errors.service && <p className="text-xs text-red-500 mt-1">{errors.service}</p>}
+                                        </div>
+
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="text-sm font-medium">Budget</label>
+                                            <select
+                                                value={form.budget}
+                                                onChange={(e) => setForm((s) => ({ ...s, budget: e.target.value }))}
+                                                className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                            >
+                                                <option>$500 - $1k</option>
+                                                <option>$1k - $3k</option>
+                                                <option>$3k - $10k</option>
+                                                <option>$10k+</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="col-span-2">
+                                            <label className="text-sm font-medium">Message</label>
+                                            <textarea
+                                                value={form.message}
+                                                onChange={(e) => setForm((s) => ({ ...s, message: e.target.value }))}
+                                                className={`mt-1 w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 min-h-[120px] ${errors.message ? 'border-red-400 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+                                                placeholder="Describe your project, goals, or any special requirements..."
+                                            />
+                                            {errors.message && <p className="text-xs text-red-500 mt-1">{errors.message}</p>}
+                                        </div>
+
+                                        <div className="col-span-2">
+                                            <label className="text-sm font-medium">Attachment (optional)</label>
+                                            <input type="file" onChange={handleFileChange} className="mt-1 w-full text-sm text-gray-600" />
+                                            <p className="text-xs text-gray-400 mt-1">Max {Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB</p>
+                                        </div>
                                         {/* ... rest of inputs omitted from this snippet for brevity (keep your original JSX) ... */}
 
                                         {/* IMPORTANT: render the HCaptcha component but only on client and with a remount key */}
