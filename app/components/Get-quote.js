@@ -9,7 +9,7 @@ const HCaptcha = dynamic(() => import('@hcaptcha/react-hcaptcha'), { ssr: false 
 
 export default function GetQuoteModal({ open = false, setOpen }) {
     const MAX_FILE_SIZE = 20 * 1024 * 1024;
-    const CAPTCHA_TIMEOUT_MS = 60_000; 
+    const CAPTCHA_TIMEOUT_MS = 60_000;
 
     const [form, setForm] = useState({
         name: '',
@@ -27,7 +27,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
     const firstInputRef = useRef(null);
 
     const captchaRef = useRef(null);
-    
+
     const captchaResolveRef = useRef(null);
     const captchaRejectRef = useRef(null);
     const captchaTimerRef = useRef(null);
@@ -59,7 +59,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
 
     useEffect(() => {
         return () => {
-      
             if (uploadTimerRef.current) {
                 clearInterval(uploadTimerRef.current);
                 uploadTimerRef.current = null;
@@ -74,7 +73,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                 abortControllerRef.current = null;
             }
         };
-        
     }, []);
 
     function validate() {
@@ -127,7 +125,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         setTimeout(() => toast.dismiss(id), 4000);
     }
 
-
     function cancelCaptchaExecution() {
         if (captchaExecuting) {
             setCaptchaExecuting(false);
@@ -137,27 +134,56 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             captchaTimerRef.current = null;
         }
         if (captchaResolveRef.current || captchaRejectRef.current) {
-           
             try {
                 if (captchaRejectRef.current) {
                     captchaRejectRef.current(new Error('Captcha canceled by user'));
                 }
-            } catch (e) {
-              
-            }
+            } catch (e) { }
             captchaResolveRef.current = null;
             captchaRejectRef.current = null;
         }
-        try { captchaRef.current?.resetCaptcha?.(); } catch (e) { console.log(e)}
+        try { captchaRef.current?.resetCaptcha?.(); } catch (e) { console.log(e) }
         setCaptchaError('Captcha canceled — you can retry.');
     }
 
-    function executeCaptcha({ timeout = 60000 } = {}) {
+    function waitForCaptchaReady(waitMs = 10000, interval = 200) {
         return new Promise((resolve, reject) => {
-            if (!captchaRef.current) return reject(new Error('Captcha not ready'));
-            if (!captchaRef.current.execute) return reject(new Error('Captcha not initialized yet. Try again.'));
+            if (captchaReady && captchaRef.current?.execute) return resolve(true);
+            let elapsed = 0;
+            const t = setInterval(() => {
+                elapsed += interval;
+                if (captchaReady && captchaRef.current?.execute) {
+                    clearInterval(t);
+                    return resolve(true);
+                }
+                if (elapsed >= waitMs) {
+                    clearInterval(t);
+                    return reject(new Error('Captcha failed to initialize in time'));
+                }
+            }, interval);
+        });
+    }
+
+    
+    async function executeCaptcha({ timeout = CAPTCHA_TIMEOUT_MS } = {}) {
+        return new Promise(async (resolve, reject) => {
+            if (!captchaRef.current) return reject(new Error('Captcha not mounted yet'));
+
+            try {
+                await waitForCaptchaReady(10000);
+            } catch (err) {
+                toast.error('Captcha failed to initialize. Please try "Verify Captcha" button or reload the page.');
+                return reject(err);
+            }
+
+            if (captchaExecuting) return reject(new Error('Captcha already executing'));
+
+            setCaptchaError('');
+            setCaptchaExecuting(true);
 
             captchaResolveRef.current = null;
+            captchaRejectRef.current = null;
+
             let remainingTime = timeout;
             let timer = null;
             let lastTick = Date.now();
@@ -166,11 +192,13 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             const startTimer = () => {
                 lastTick = Date.now();
                 timer = setTimeout(() => {
-                    if (captchaResolveRef.current) {
-                        captchaResolveRef.current = null;
-                        try { captchaRef.current.resetCaptcha(); } catch (e) { }
-                        reject(new Error('Captcha timed out — please try again.'));
+                    if (captchaRejectRef.current) {
+                        captchaRejectRef.current(new Error('Captcha timed out — please try again.'));
+                        return;
                     }
+                    captchaResolveRef.current = null;
+                    cleanup();
+                    reject(new Error('Captcha timed out — please try again.'));
                 }, remainingTime);
             };
 
@@ -179,14 +207,12 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                 clearTimeout(timer);
                 timer = null;
                 const elapsed = Date.now() - lastTick;
-                remainingTime -= elapsed;
+                remainingTime = Math.max(0, remainingTime - elapsed);
                 paused = true;
-                console.log(`⏸️ Captcha paused, ${Math.round(remainingTime / 1000)}s left`);
             };
 
             const resumeTimer = () => {
                 if (paused && !timer) {
-                    console.log('▶️ Captcha resumed');
                     paused = false;
                     startTimer();
                 }
@@ -198,35 +224,50 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             window.addEventListener('focusin', onFocus);
             window.addEventListener('focusout', onBlur);
 
-            const resolver = (token) => {
-                clearTimeout(timer);
-                captchaResolveRef.current = null;
-                setHcaptchaToken(token);
-                cleanup();
-                resolve(token);
-            };
-
             const cleanup = () => {
                 clearTimeout(timer);
+                timer = null;
                 window.removeEventListener('focusin', onFocus);
                 window.removeEventListener('focusout', onBlur);
                 paused = false;
-                timer = null;
+                setCaptchaExecuting(false);
+                captchaResolveRef.current = null;
+                captchaRejectRef.current = null;
             };
 
-            captchaResolveRef.current = resolver;
-
-            try {
-                captchaRef.current.execute();
-                startTimer();
-                // toast.loading('Please complete the hCaptcha challenge...', { id: 'captcha' });
-            } catch (err) {
+            captchaResolveRef.current = (token) => {
                 cleanup();
-                reject(new Error('Captcha execution failed: ' + err.message));
-            }
+                setHcaptchaToken(token);
+                resolve(token);
+            };
+            captchaRejectRef.current = (err) => {
+                cleanup();
+                setHcaptchaToken('');
+                setCaptchaError(err?.message || 'Captcha canceled');
+                reject(err);
+            };
+
+            let attempts = 0;
+            const maxAttempts = 3;
+            const tryExecute = () => {
+                attempts += 1;
+                try {
+                    captchaRef.current.execute();
+                    toast.loading('Please complete the hCaptcha challenge...', { id: 'captcha-wait', duration: 4000 });
+                    startTimer();
+                } catch (err) {
+                    if (attempts < maxAttempts) {
+                        setTimeout(tryExecute, 300);
+                        return;
+                    } else {
+                        captchaRejectRef.current(new Error('Captcha execution failed: ' + (err?.message || 'unknown')));
+                    }
+                }
+            };
+
+            tryExecute();
         });
     }
-
 
     function onCaptchaVerify(token) {
         if (captchaResolveRef.current) {
@@ -242,14 +283,12 @@ export default function GetQuoteModal({ open = false, setOpen }) {
 
     function onCaptchaLoad() {
         setCaptchaReady(true);
-      
         console.log('hCaptcha loaded ✅');
     }
 
     function onCaptchaError(err) {
         console.error('hCaptcha error ❌', err);
         setCaptchaError('Captcha failed to load — please try again.');
-       
         if (captchaRejectRef.current) {
             try { captchaRejectRef.current(new Error('Captcha error')); } catch (e) { }
         }
@@ -257,14 +296,12 @@ export default function GetQuoteModal({ open = false, setOpen }) {
     }
 
     function cancelUploadAndClose() {
-  
         if (abortControllerRef.current) {
             try { abortControllerRef.current.abort(); } catch (e) { }
             abortControllerRef.current = null;
             stopUploadToast(false, 'Upload canceled');
         }
 
-      
         if (captchaExecuting) {
             cancelCaptchaExecution();
             toast('Captcha canceled', { icon: '⚠️' });
@@ -347,7 +384,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             setForm({ name: '', email: '', company: '', service: 'Web Design', budget: '$1k - $3k', message: '' });
             setFile(null);
             setHcaptchaToken('');
-            try { captchaRef.current?.resetCaptcha?.(); } catch (e) {  }
+            try { captchaRef.current?.resetCaptcha?.(); } catch (e) { }
         } catch (err) {
             const isCanceled =
                 (axios.isCancel && axios.isCancel(err)) ||
@@ -385,7 +422,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             const token = await executeCaptcha();
             toast.dismiss('manual-captcha');
             toast.success('Captcha completed — you can now submit the form.');
-            
             console.log('manual captcha token', token);
         } catch (err) {
             toast.dismiss('manual-captcha');
@@ -428,7 +464,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                             key="overlay"
                             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
                             onClick={() => {
-                               
+
                                 if (captchaExecuting) {
                                     cancelCaptchaExecution();
                                     toast('Captcha canceled — you can try again.', { icon: '⚠️' });
@@ -574,7 +610,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             onError={onCaptchaError}
                                         />
 
-                                        {/* Useful UX hints */}
                                         {captchaReady ? (
                                             <p className="col-span-2 text-xs text-gray-500">Captcha ready ✅</p>
                                         ) : (
@@ -598,7 +633,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             </button>
 
                                             <div className="ml-auto flex items-center gap-3">
-                                               
                                                 <button
                                                     type="button"
                                                     onClick={handleManualCaptcha}
