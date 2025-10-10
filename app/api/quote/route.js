@@ -21,7 +21,7 @@ export async function POST(req) {
         let payload = {};
         let fileAttachment = null;
 
-        // --- Parse request ---
+        
         if (contentType.includes("multipart/form-data")) {
             const formData = await req.formData();
             payload = {
@@ -50,12 +50,12 @@ export async function POST(req) {
             return NextResponse.json({ ok: false, message: "Unsupported content-type" }, { status: 400 });
         }
 
-        // --- Verify fields ---
+     
         if (!payload.name || !payload.email || !payload.message) {
             return NextResponse.json({ ok: false, message: "Name, email and message are required" }, { status: 400 });
         }
 
-        // --- Verify hCaptcha ---
+       
         if (!payload.hcaptchaToken) {
             return NextResponse.json({ ok: false, message: "Missing hCaptcha token" }, { status: 400 });
         }
@@ -72,13 +72,13 @@ export async function POST(req) {
             return NextResponse.json({ ok: false, message: "hCaptcha verification failed" }, { status: 403 });
         }
 
-        // --- Save to MongoDB ---
+        
         const { db } = await connectToDatabase();
         const quotes = db.collection("quotes");
 
         const record = {
             ...payload,
-            hcaptchaToken: undefined, // don’t store token
+            hcaptchaToken: undefined, 
             fileMeta: fileAttachment
                 ? { filename: fileAttachment.filename, contentType: fileAttachment.contentType, size: fileAttachment.content?.length ?? null }
                 : null,
@@ -87,7 +87,7 @@ export async function POST(req) {
 
         const insertResult = await quotes.insertOne(record);
 
-        // --- Send Email ---
+ 
         const transporter = nodemailer.createTransport({
             service: "gmail",
             auth: {
@@ -185,7 +185,7 @@ export async function POST(req) {
               </td>
             </tr>
 
-            <!-- Footer -->
+           
             <tr>
               <td style="background:#fafafa;padding:14px 18px;text-align:center;color:#9ca3af;font-size:12px;">
                 By submitting this form, the sender agreed to be contacted about their project. &nbsp;•&nbsp; Digital-X

@@ -3,11 +3,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast, { Toaster } from 'react-hot-toast';
-import HCaptcha from '@hcaptcha/react-hcaptcha';
 import axios from 'axios';
+import dynamic from 'next/dynamic';
+const HCaptcha = dynamic(() => import('@hcaptcha/react-hcaptcha'), { ssr: false });
 
 export default function GetQuoteModal({ open = false, setOpen }) {
     const MAX_FILE_SIZE = 20 * 1024 * 1024;
+    const CAPTCHA_TIMEOUT_MS = 60_000; 
 
     const [form, setForm] = useState({
         name: '',
@@ -24,25 +26,26 @@ export default function GetQuoteModal({ open = false, setOpen }) {
     const [serverError, setServerError] = useState('');
     const firstInputRef = useRef(null);
 
-    // captcha + resolver
     const captchaRef = useRef(null);
+    
     const captchaResolveRef = useRef(null);
+    const captchaRejectRef = useRef(null);
+    const captchaTimerRef = useRef(null);
+    const [captchaReady, setCaptchaReady] = useState(false);
+    const [captchaExecuting, setCaptchaExecuting] = useState(false);
+    const [captchaError, setCaptchaError] = useState('');
 
-    // cancellation + timers
     const abortControllerRef = useRef(null);
     const toastIdRef = useRef(null);
     const uploadTimerRef = useRef(null);
     const uploadStartRef = useRef(null);
 
-    // store token optionally
     const [hcaptchaToken, setHcaptchaToken] = useState('');
 
-    // focus the first input when modal opens
     useEffect(() => {
         if (open) setTimeout(() => firstInputRef.current?.focus(), 60);
     }, [open]);
 
-    // escape to close modal
     useEffect(() => {
         if (!open) return;
         function onKey(e) {
@@ -54,18 +57,24 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         return () => window.removeEventListener('keydown', onKey);
     }, [open]);
 
-    // cleanup on unmount
     useEffect(() => {
         return () => {
+      
             if (uploadTimerRef.current) {
                 clearInterval(uploadTimerRef.current);
                 uploadTimerRef.current = null;
             }
+            if (captchaTimerRef.current) {
+                clearTimeout(captchaTimerRef.current);
+                captchaTimerRef.current = null;
+            }
+            cancelCaptchaExecution();
             if (abortControllerRef.current) {
-                try { abortControllerRef.current.abort(); } catch (e) { /* ignore */ }
+                try { abortControllerRef.current.abort(); } catch (e) { }
                 abortControllerRef.current = null;
             }
         };
+        
     }, []);
 
     function validate() {
@@ -93,7 +102,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
     function startUploadToast() {
         toastIdRef.current = toast.loading('Sending request...', { duration: Infinity });
         uploadStartRef.current = Date.now();
-        // update every second with fallback elapsed time
+
         uploadTimerRef.current = setInterval(() => {
             const elapsedSec = Math.floor((Date.now() - uploadStartRef.current) / 1000);
             if (!toastIdRef.current) return;
@@ -114,73 +123,184 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         else toast.error(message || 'Upload failed', { id });
         toastIdRef.current = null;
         uploadStartRef.current = null;
-        // auto dismiss after a while so UI isn't sticky
+
         setTimeout(() => toast.dismiss(id), 4000);
     }
 
-    // Execute invisible captcha and wait for onVerify
-    function executeCaptcha({ timeout = 20000 } = {}) {
+
+    function cancelCaptchaExecution() {
+        if (captchaExecuting) {
+            setCaptchaExecuting(false);
+        }
+        if (captchaTimerRef.current) {
+            clearTimeout(captchaTimerRef.current);
+            captchaTimerRef.current = null;
+        }
+        if (captchaResolveRef.current || captchaRejectRef.current) {
+           
+            try {
+                if (captchaRejectRef.current) {
+                    captchaRejectRef.current(new Error('Captcha canceled by user'));
+                }
+            } catch (e) {
+              
+            }
+            captchaResolveRef.current = null;
+            captchaRejectRef.current = null;
+        }
+        try { captchaRef.current?.resetCaptcha?.(); } catch (e) { console.log(e)}
+        setCaptchaError('Captcha canceled — you can retry.');
+    }
+
+    function executeCaptcha({ timeout = 60000 } = {}) {
         return new Promise((resolve, reject) => {
             if (!captchaRef.current) return reject(new Error('Captcha not ready'));
+            if (!captchaRef.current.execute) return reject(new Error('Captcha not initialized yet. Try again.'));
 
-            // clear any previous resolver
             captchaResolveRef.current = null;
+            let remainingTime = timeout;
+            let timer = null;
+            let lastTick = Date.now();
+            let paused = false;
 
-            // resolver that clears timeout
+            const startTimer = () => {
+                lastTick = Date.now();
+                timer = setTimeout(() => {
+                    if (captchaResolveRef.current) {
+                        captchaResolveRef.current = null;
+                        try { captchaRef.current.resetCaptcha(); } catch (e) { }
+                        reject(new Error('Captcha timed out — please try again.'));
+                    }
+                }, remainingTime);
+            };
+
+            const pauseTimer = () => {
+                if (!timer) return;
+                clearTimeout(timer);
+                timer = null;
+                const elapsed = Date.now() - lastTick;
+                remainingTime -= elapsed;
+                paused = true;
+                console.log(`⏸️ Captcha paused, ${Math.round(remainingTime / 1000)}s left`);
+            };
+
+            const resumeTimer = () => {
+                if (paused && !timer) {
+                    console.log('▶️ Captcha resumed');
+                    paused = false;
+                    startTimer();
+                }
+            };
+
+            const onFocus = () => pauseTimer();
+            const onBlur = () => resumeTimer();
+
+            window.addEventListener('focusin', onFocus);
+            window.addEventListener('focusout', onBlur);
+
             const resolver = (token) => {
                 clearTimeout(timer);
                 captchaResolveRef.current = null;
                 setHcaptchaToken(token);
+                cleanup();
                 resolve(token);
+            };
+
+            const cleanup = () => {
+                clearTimeout(timer);
+                window.removeEventListener('focusin', onFocus);
+                window.removeEventListener('focusout', onBlur);
+                paused = false;
+                timer = null;
             };
 
             captchaResolveRef.current = resolver;
 
-            // try to execute
             try {
-                // some versions of the lib return promise; we still depend on onVerify callback
                 captchaRef.current.execute();
+                startTimer();
+                // toast.loading('Please complete the hCaptcha challenge...', { id: 'captcha' });
             } catch (err) {
-                captchaResolveRef.current = null;
-                return reject(new Error('Captcha execute failed'));
+                cleanup();
+                reject(new Error('Captcha execution failed: ' + err.message));
             }
-
-            // timeout safety
-            const timer = setTimeout(() => {
-                if (captchaResolveRef.current) {
-                    captchaResolveRef.current = null;
-                    reject(new Error('Captcha timed out'));
-                }
-            }, timeout);
         });
     }
 
-    // HCaptcha onVerify callback
+
     function onCaptchaVerify(token) {
         if (captchaResolveRef.current) {
             const resolver = captchaResolveRef.current;
             captchaResolveRef.current = null;
+            captchaRejectRef.current = null;
             resolver(token);
             return;
         }
-        // fallback store
         setHcaptchaToken(token);
+        setCaptchaExecuting(false);
     }
 
-    // Cancel in-flight upload / request and close modal
+    function onCaptchaLoad() {
+        setCaptchaReady(true);
+      
+        console.log('hCaptcha loaded ✅');
+    }
+
+    function onCaptchaError(err) {
+        console.error('hCaptcha error ❌', err);
+        setCaptchaError('Captcha failed to load — please try again.');
+       
+        if (captchaRejectRef.current) {
+            try { captchaRejectRef.current(new Error('Captcha error')); } catch (e) { }
+        }
+        setCaptchaExecuting(false);
+    }
+
     function cancelUploadAndClose() {
+  
         if (abortControllerRef.current) {
-            try { abortControllerRef.current.abort(); } catch (e) { /* ignore */ }
+            try { abortControllerRef.current.abort(); } catch (e) { }
             abortControllerRef.current = null;
             stopUploadToast(false, 'Upload canceled');
         }
+
+      
+        if (captchaExecuting) {
+            cancelCaptchaExecution();
+            toast('Captcha canceled', { icon: '⚠️' });
+            setLoading(false);
+            return;
+        }
+
         setLoading(false);
         setOpen(false);
+    }
+
+    async function handleCancelButton() {
+        if (abortControllerRef.current) {
+            try { abortControllerRef.current.abort(); } catch (e) { console.error(e); }
+            abortControllerRef.current = null;
+            stopUploadToast(false, 'Upload canceled');
+            setLoading(false);
+            setOpen(false);
+            return;
+        }
+
+        if (captchaExecuting) {
+            cancelCaptchaExecution();
+            toast('Cancelled captcha — you can retry.', { icon: '✖️' });
+            setLoading(false);
+            return;
+        }
+
+        setOpen(false);
+        setLoading(false);
     }
 
     async function handleSubmit(e) {
         e.preventDefault();
         setServerError('');
+        setCaptchaError('');
         const eObj = validate();
         setErrors(eObj);
         if (Object.keys(eObj).length) return;
@@ -193,23 +313,18 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         setLoading(true);
 
         try {
-            // run captcha
             const token = await executeCaptcha().catch((err) => { throw err; });
             if (!token) throw new Error('Captcha verification failed');
 
-            // build payload
             const payload = new FormData();
             Object.entries(form).forEach(([k, v]) => payload.append(k, v));
             if (file) payload.append('file', file);
             payload.append('hcaptchaToken', token);
 
-            // start UI
             startUploadToast();
 
-            // create abort controller for axios
             abortControllerRef.current = new AbortController();
 
-            // axios upload with progress + signal
             const res = await axios.post('/api/quote', payload, {
                 headers: { 'Content-Type': 'multipart/form-data' },
                 signal: abortControllerRef.current.signal,
@@ -218,10 +333,9 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                     const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
                     toast.loading(`Uploading... ${percent}%`, { id: toastIdRef.current });
                 },
-                timeout: 120000, // 2 minutes fallback
+                timeout: 120000,
             });
 
-            // success / error handling
             if (res.status < 200 || res.status >= 300) {
                 stopUploadToast(false, res.data?.message || `Server error (${res.status})`);
                 setServerError(res.data?.message || `Server error (${res.status})`);
@@ -233,9 +347,8 @@ export default function GetQuoteModal({ open = false, setOpen }) {
             setForm({ name: '', email: '', company: '', service: 'Web Design', budget: '$1k - $3k', message: '' });
             setFile(null);
             setHcaptchaToken('');
-            try { captchaRef.current?.resetCaptcha?.(); } catch (e) { /* ignore */ }
+            try { captchaRef.current?.resetCaptcha?.(); } catch (e) {  }
         } catch (err) {
-            // detect abort/cancel
             const isCanceled =
                 (axios.isCancel && axios.isCancel(err)) ||
                 err?.name === 'CanceledError' ||
@@ -250,9 +363,13 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                 console.error('Submit error:', err);
                 stopUploadToast(false, err?.message || 'Something went wrong');
                 setServerError(err?.message || 'Something went wrong');
+
+                if (err?.message?.toLowerCase?.().includes('captcha')) {
+                    setCaptchaError(err.message);
+                    cancelCaptchaExecution();
+                }
             }
         } finally {
-            // cleanup controller
             if (abortControllerRef.current) {
                 abortControllerRef.current = null;
             }
@@ -260,7 +377,23 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         }
     }
 
-    // motion variants
+    async function handleManualCaptcha() {
+        setServerError('');
+        setCaptchaError('');
+        try {
+            toast.loading('Starting captcha...', { id: 'manual-captcha', duration: Infinity });
+            const token = await executeCaptcha();
+            toast.dismiss('manual-captcha');
+            toast.success('Captcha completed — you can now submit the form.');
+            
+            console.log('manual captcha token', token);
+        } catch (err) {
+            toast.dismiss('manual-captcha');
+            toast.error(err?.message || 'Captcha failed');
+            setCaptchaError(err?.message || 'Captcha failed');
+        }
+    }
+
     const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1 }, exit: { opacity: 0 } };
     const panelVariants = { hidden: { opacity: 0, y: 60, scale: 0.98 }, visible: { opacity: 1, y: 0, scale: 1 }, exit: { opacity: 0, y: 60, scale: 0.98 } };
 
@@ -268,7 +401,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
         <>
             <Toaster position="top-right" />
 
-            {/* Floating CTA Button */}
             <button
                 onClick={() => setOpen(true)}
                 aria-label="Get a free quote"
@@ -291,18 +423,33 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                         exit="exit"
                         transition={{ duration: 0.18, ease: 'easeInOut' }}
                     >
-                        {/* Overlay */}
+
                         <motion.div
                             key="overlay"
                             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                            onClick={() => cancelUploadAndClose()}
+                            onClick={() => {
+                               
+                                if (captchaExecuting) {
+                                    cancelCaptchaExecution();
+                                    toast('Captcha canceled — you can try again.', { icon: '⚠️' });
+                                    return;
+                                }
+                                if (abortControllerRef.current) {
+                                    try { abortControllerRef.current.abort(); } catch (e) { }
+                                    abortControllerRef.current = null;
+                                    stopUploadToast(false, 'Upload canceled');
+                                    setLoading(false);
+                                    setOpen(false);
+                                    return;
+                                }
+                                cancelUploadAndClose();
+                            }}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.18 }}
                         />
 
-                        {/* Panel */}
                         <motion.div
                             key="panel"
                             className="relative w-full md:max-w-3xl bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden md:mx-4"
@@ -313,7 +460,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                             transition={{ type: 'spring', stiffness: 260, damping: 26 }}
                             style={{ maxHeight: '90vh' }}
                         >
-                            {/* Header */}
                             <div className="flex justify-between items-center px-6 py-4 border-b">
                                 <h3 className="text-lg font-semibold">Get a Free Quote</h3>
                                 <button
@@ -325,7 +471,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                 </button>
                             </div>
 
-                            {/* Content */}
                             <div className="p-6 overflow-auto" style={{ maxHeight: 'calc(90vh - 128px)' }}>
                                 {sent ? (
                                     <div className="text-center py-8">
@@ -335,7 +480,7 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                     </div>
                                 ) : (
                                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {/* Name */}
+
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Full name</label>
                                             <input
@@ -348,7 +493,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
                                         </div>
 
-                                        {/* Email */}
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Email</label>
                                             <input
@@ -361,7 +505,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
                                         </div>
 
-                                        {/* Company */}
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Company</label>
                                             <input
@@ -372,7 +515,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             />
                                         </div>
 
-                                        {/* Service */}
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Service</label>
                                             <select
@@ -390,7 +532,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             {errors.service && <p className="text-xs text-red-500 mt-1">{errors.service}</p>}
                                         </div>
 
-                                        {/* Budget */}
                                         <div className="col-span-2 md:col-span-1">
                                             <label className="text-sm font-medium">Budget</label>
                                             <select
@@ -405,7 +546,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             </select>
                                         </div>
 
-                                        {/* Message */}
                                         <div className="col-span-2">
                                             <label className="text-sm font-medium">Message</label>
                                             <textarea
@@ -417,7 +557,6 @@ export default function GetQuoteModal({ open = false, setOpen }) {
                                             {errors.message && <p className="text-xs text-red-500 mt-1">{errors.message}</p>}
                                         </div>
 
-                                        {/* Attachment */}
                                         <div className="col-span-2">
                                             <label className="text-sm font-medium">Attachment (optional)</label>
                                             <input type="file" onChange={handleFileChange} className="mt-1 w-full text-sm text-gray-600" />
@@ -426,41 +565,58 @@ export default function GetQuoteModal({ open = false, setOpen }) {
 
                                         {serverError && <p className="col-span-2 text-sm text-red-500">{serverError}</p>}
 
-                                        {/* Invisible HCaptcha */}
                                         <HCaptcha
                                             ref={captchaRef}
                                             sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITEKEY}
                                             size="invisible"
                                             onVerify={onCaptchaVerify}
+                                            onLoad={onCaptchaLoad}
+                                            onError={onCaptchaError}
                                         />
 
-                                        {/* Actions */}
+                                        {/* Useful UX hints */}
+                                        {captchaReady ? (
+                                            <p className="col-span-2 text-xs text-gray-500">Captcha ready ✅</p>
+                                        ) : (
+                                            <p className="col-span-2 text-xs text-yellow-600">Captcha loading… please wait </p>
+                                        )}
+
+                                        {captchaExecuting && (
+                                            <p className="col-span-2 text-xs text-blue-600">Captcha in progress — click outside to cancel it or press Cancel ✖️</p>
+                                        )}
+
+                                        {captchaError && <p className="col-span-2 text-sm text-red-500">{captchaError}</p>}
+
                                         <div className="col-span-2 flex items-center justify-between gap-4 mt-2">
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    if (abortControllerRef.current) {
-                                                        try { abortControllerRef.current.abort(); } catch (e) { /* ignore */ }
-                                                        abortControllerRef.current = null;
-                                                        stopUploadToast(false, 'Upload canceled');
-                                                    }
-                                                    setOpen(false);
-                                                    setLoading(false);
-                                                }}
+                                                onClick={handleCancelButton}
                                                 className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-50"
-                                                disabled={loading}
+                                                disabled={false}
                                             >
                                                 Cancel
                                             </button>
 
-                                            <button type="submit" disabled={loading} className="ml-auto bg-blue-600 text-white px-5 py-2 rounded-full font-semibold disabled:opacity-60 flex items-center gap-2">
-                                                {loading ? (
-                                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                                        <circle cx="12" cy="12" r="10" stroke="white" strokeWidth="4" strokeOpacity="0.3" fill="none" />
-                                                        <path d="M4 12a8 8 0 018-8" stroke="white" strokeWidth="4" strokeLinecap="round" fill="none" />
-                                                    </svg>
-                                                ) : 'Send Request'}
-                                            </button>
+                                            <div className="ml-auto flex items-center gap-3">
+                                               
+                                                <button
+                                                    type="button"
+                                                    onClick={handleManualCaptcha}
+                                                    disabled={captchaExecuting || loading}
+                                                    className="px-3 py-2 rounded-md border hover:bg-gray-50 text-sm"
+                                                >
+                                                    {captchaExecuting ? 'Captcha running...' : 'Verify Captcha'}
+                                                </button>
+
+                                                <button type="submit" disabled={loading || captchaExecuting} className="bg-blue-600 text-white px-5 py-2 rounded-full font-semibold disabled:opacity-60 flex items-center gap-2">
+                                                    {loading ? (
+                                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                                            <circle cx="12" cy="12" r="10" stroke="white" strokeWidth="4" strokeOpacity="0.3" fill="none" />
+                                                            <path d="M4 12a8 8 0 018-8" stroke="white" strokeWidth="4" strokeLinecap="round" fill="none" />
+                                                        </svg>
+                                                    ) : 'Send Request'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </form>
                                 )}
